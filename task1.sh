@@ -8,6 +8,7 @@
 line="  "---------"|"---------"|"---------" "
 positions=(- - - - - - - - -)
 player_one=false
+observer=false
 game_finished=false
 repeat=false
 
@@ -15,8 +16,12 @@ if ! [ -p pipe1 ]; then
 	mkfifo pipe1
 	player_one=true
 	sign="X"
-else
+elif ! [ -p pipe2 ]; then
+	mkfifo pipe2
 	sign="O"
+else
+	mkfifo pipe3
+	observer=true
 fi
 
 #рисует поле ¯\_(ツ)_/¯
@@ -71,8 +76,16 @@ function draw_board {
 function end_game {
   game_finished=true
   draw_board positions
-  if [ -p pipe1 ]; then
-    rm pipe1
+  if [ "$player_one" = true ] ; then
+	if [ -p pipe1 ]; then
+	    rm pipe1
+	fi
+	if [ -p pipe2 ]; then
+	    rm pipe2
+	fi
+	if [ -p pipe3 ]; then
+	    rm pipe3
+	fi
   fi
 }
 
@@ -85,6 +98,8 @@ function test_position_str {
     end_game
     if [ "$player_one" = true ] ; then
 	echo "You won!"
+    elif [ "$observer" = true ]; then
+	echo "Player1 won!"
     else
 	echo "You lose!"
     fi
@@ -94,6 +109,8 @@ function test_position_str {
     end_game
     if [ "$player_one" = true ] ; then
 	echo "You won!"
+    elif [ "$observer" = true ]; then
+	echo "Player2 won!"
     else
 	echo "You lose!"
     fi
@@ -116,7 +133,12 @@ do
       echo "Waiting..."
 
       #читаем данные
-      msg=$(cat < pipe1)
+      if [ "$observer" = false ] ; then
+        msg=$(cat < pipe1)
+      else
+	msg=$(cat < pipe3)
+      fi
+
       index=${msg:0:1}
       sign2=${msg:2:3}
 
@@ -126,45 +148,54 @@ do
       positions_str=$(printf "%s" "${positions[@]}")
       test_position_str $positions_str
 
-      if [ "$game_finished" = false ] ; then
+      if [ "$game_finished" = false ] &&  [ "$observer" = false ]; then
 	echo "Your move"
         player_one=true
+      elif [ "$game_finished" = false ] && [ "$observer" = true ]; then
+        :
       else
 	break
       fi
     fi
   else
     echo -e "Can't move here\nYour move"
-    repeat=false
   fi
 
-  read -d'' -s -n1 input
-  case $input in
-        1) index=0;;
-        2) index=1;;
-        3) index=2;;
-        4) index=3;;
-        5) index=4;;
-        6) index=5;;
-        7) index=6;;
-        8) index=7;;
-        9) index=8;;
-  esac
+  if [ "$player_one" = true ] || [ "$repeat" = true ] ; then
+          repeat=false
+	  read -d'' -s -n1 input
+	  case $input in
+		1) index=0;;
+		2) index=1;;
+		3) index=2;;
+		4) index=3;;
+		5) index=4;;
+		6) index=5;;
+		7) index=6;;
+		8) index=7;;
+		9) index=8;;
+	  esac
 
-  if [ "${positions["$index"]}" == "-" ]; then
-    positions["$index"]=$sign
-    #отправляем данные
-    echo "$index,$sign" > pipe1
-  else
-    repeat=true
-  fi
+	  if [ "${positions["$index"]}" == "-" ]; then
+	    positions["$index"]=$sign
+	    #отправляем данные
+	    if [ "$observer" = false ] && [ -p pipe3 ]; then
+	      echo "$index,$sign" > pipe3
+	    fi
+	    echo "$index,$sign" > pipe1
+	  else
+	    repeat=true
+	  fi
 
-  positions_str=$(printf "%s" "${positions[@]}")
-  test_position_str $positions_str
-  if [ "$game_finished" = false ] ; then
-    player_one=false
-  else
-    player_one=true
-    break
+	  if [ "$repeat" = false ] ; then
+		  positions_str=$(printf "%s" "${positions[@]}")
+		  test_position_str $positions_str
+		  if [ "$game_finished" = false ] ; then
+		    player_one=false
+		  else
+		    player_one=true
+		    break
+		  fi
+	  fi
   fi
 done
